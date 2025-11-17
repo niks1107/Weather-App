@@ -1,123 +1,150 @@
-#!/usr/bin/env python3
-"""
-Simple Weather App using Open-Meteo (no API key).
-Features:
- - City -> geocode -> current weather
- - Basic error handling
- - Maps weather_code to human text
-"""
-
 import requests
-import sys
 from datetime import datetime
 
 GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 
-# Small mapping for common Open-Meteo / WMO weather codes to text.
-# This is not exhaustive — see Open-Meteo docs for full WMO codes.
-WEATHER_CODE_MAP = {
-    0: "Clear sky",
-    1: "Mainly clear",
-    2: "Partly cloudy",
-    3: "Overcast",
-    45: "Fog",
-    48: "Depositing rime fog",
-    51: "Light drizzle",
-    53: "Moderate drizzle",
-    55: "Dense drizzle",
-    61: "Slight rain",
-    63: "Moderate rain",
-    65: "Heavy rain",
-    80: "Rain showers (slight)",
-    81: "Rain showers (moderate)",
-    82: "Rain showers (violent)",
-    95: "Thunderstorm",
-    99: "Heavy hail with thunder",
-}
 
-def geocode(city_name, limit=1):
-    params = {"name": city_name, "count": limit}
-    r = requests.get(GEOCODE_URL, params=params, timeout=10)
-    r.raise_for_status()
-    j = r.json()
-    if "results" not in j or len(j["results"]) == 0:
+def c_to_f(c):
+    return c * 9/5 + 32
+
+
+def geocode_first(place):
+    try:
+        r = requests.get(GEOCODE_URL, params={"name": place, "count": 1}, timeout=10)
+        r.raise_for_status()
+        j = r.json()
+
+        if "results" not in j or len(j["results"]) == 0:
+            return None
+
+        r0 = j["results"][0]
+        return float(r0["latitude"]), float(r0["longitude"]), r0.get("name",""), r0.get("country","")
+    except:
         return None
-    return j["results"][0]  # first match
 
-def get_current_weather(lat, lon, timezone="auto"):
+
+def fetch_weather(lat, lon):
     params = {
         "latitude": lat,
         "longitude": lon,
-        "current_weather": "true",
-        "timezone": timezone
+        "current_weather": True,
+        "hourly": "relativehumidity_2m",
+        "daily": "temperature_2m_max,temperature_2m_min,sunrise,sunset",
+        "timezone": "auto"
     }
     r = requests.get(FORECAST_URL, params=params, timeout=10)
     r.raise_for_status()
     return r.json()
 
-def weather_code_to_text(code):
-    return WEATHER_CODE_MAP.get(code, f"Weather code {code}")
+
+def show_current_weather(data, name, country, use_f):
+    cw = data.get("current_weather", {})
+
+    temp_c = cw.get("temperature")
+    wind = cw.get("windspeed", "--")
+    code = cw.get("weathercode")
+    time_iso = cw.get("time", "")
+
+    # humidity
+    humidity = "--"
+    try:
+        now_iso = cw.get("time")
+        times = data["hourly"]["time"]
+        hums = data["hourly"]["relativehumidity_2m"]
+        if now_iso in times:
+            i = times.index(now_iso)
+            humidity = hums[i]
+    except:
+        pass
+
+    sunrise = data.get("daily", {}).get("sunrise", ["--"])[0].split("T")[-1]
+    sunset = data.get("daily", {}).get("sunset", ["--"])[0].split("T")[-1]
+
+    if temp_c is None:
+        temp = "--"
+    else:
+        temp = f"{c_to_f(temp_c):.1f}°F" if use_f else f"{temp_c:.1f}°C"
+
+    print("\n========== CURRENT WEATHER ==========")
+    print(f"Location: {name}, {country}")
+    print(f"Local Time: {time_iso}")
+    print(f"Temperature: {temp}")
+    print(f"Weather Code: {code}")
+    print(f"Humidity: {humidity}%")
+    print(f"Wind: {wind} km/h")
+    print(f"Sunrise: {sunrise}   Sunset: {sunset}")
+    print("=====================================\n")
+
+
+def show_forecast(data, name, country, use_f):
+    daily = data.get("daily", {})
+    days = daily.get("time", [])
+    tmax = daily.get("temperature_2m_max", [])
+    tmin = daily.get("temperature_2m_min", [])
+
+    print("\n========== 5-DAY FORECAST ==========")
+    print(f"Location: {name}, {country}\n")
+
+    for i, day in enumerate(days[:5]):
+        d = day.split("T")[0]
+        if i < len(tmax) and i < len(tmin):
+            hi = tmax[i]
+            lo = tmin[i]
+
+            if use_f:
+                hi = c_to_f(hi)
+                lo = c_to_f(lo)
+                unit = "°F"
+            else:
+                unit = "°C"
+
+            print(f"{d}: High {hi:.1f}{unit} | Low {lo:.1f}{unit}")
+
+    print("=====================================\n")
+
 
 def main():
-    if len(sys.argv) > 1:
-        city = " ".join(sys.argv[1:])
-    else:
-        city = input("Enter city name (e.g. Delhi, London): ").strip()
-    if not city:
-        print("No city provided. Exiting.")
-        return
+    use_f = False  # default Celsius
 
-    try:
-        place = geocode(city)
-    except requests.RequestException as e:
-        print("Network error during geocoding:", e)
-        return
+    print("=== SIMPLE WEATHER CLI ===")
+    print("Default units: Celsius")
+    print("Type 'unit' to toggle C ↔ F")
+    print("Type 'quit' to exit\n")
 
-    if not place:
-        print(f"City '{city}' not found (geocoding returned no results).")
-        return
+    while True:
+        place = input("Enter location: ").strip()
 
-    name = place.get("name")
-    country = place.get("country")
-    admin = place.get("admin1") or place.get("admin2") or ""
-    lat = place.get("latitude")
-    lon = place.get("longitude")
+        if place.lower() == "quit":
+            break
 
-    print(f"\nLocation found: {name}, {admin} {country} (lat={lat}, lon={lon})")
+        if place.lower() == "unit":
+            use_f = not use_f
+            print(f"Units changed to: {'°F' if use_f else '°C'}\n")
+            continue
 
-    try:
-        weather_json = get_current_weather(lat, lon)
-    except requests.RequestException as e:
-        print("Network error fetching weather:", e)
-        return
+        if not place:
+            continue
 
-    current = weather_json.get("current_weather")
-    if not current:
-        print("No current weather available for this location.")
-        return
+        print("Resolving location...")
 
-    # current_weather includes: temperature, windspeed, winddirection, weathercode, time
-    temp = current.get("temperature")
-    windspeed = current.get("windspeed")
-    winddir = current.get("winddirection")
-    code = current.get("weathercode")
-    time_iso = current.get("time")
+        loc = geocode_first(place)
+        if not loc:
+            print("❌ Location not found.\n")
+            continue
 
-    readable = weather_code_to_text(code)
+        lat, lon, name, country = loc
 
-    # format time nicely
-    try:
-        time_obj = datetime.fromisoformat(time_iso)
-        time_str = time_obj.strftime("%Y-%m-%d %H:%M")
-    except Exception:
-        time_str = time_iso or "unknown"
+        print(f"Fetching weather for {name}, {country}...")
+        data = fetch_weather(lat, lon)
 
-    print(f"\nCurrent weather at {name} ({time_str} local):")
-    print(f" • Temperature: {temp} °C")
-    print(f" • Condition: {readable}")
-    print(f" • Weather code: {code}")
-    print(f" • Wind: {windspeed} km/h at {winddir}°")
+        show_current_weather(data, name, country, use_f)
+
+        # ask for forecast
+        cmd = input("View 5-day forecast? (y/n): ").lower()
+        if cmd == "y":
+            show_forecast(data, name, country, use_f)
+
 
 if __name__ == "__main__":
     main()
