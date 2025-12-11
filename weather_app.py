@@ -1,19 +1,3 @@
-#!/usr/bin/env python3
-"""
-Single-file Weather App with Tkinter + Open-Meteo
-Features:
- - No API key (uses Open-Meteo)
- - Autocomplete (geocoding API)
- - Current weather: temperature, humidity, wind, sunrise/sunset
- - 5-day forecast graph (matplotlib)
- - Dark/Light mode toggle
- - Celsius <-> Fahrenheit toggle
- - Simple generated icons (Pillow) embedded and created at runtime
-Save this file and run: python3 weather_app_singlefile.py
-Dependencies:
-    pip install requests pillow matplotlib
-"""
-
 import os
 import sys
 import io
