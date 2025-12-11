@@ -79,7 +79,10 @@ Location: London, United Kingdom
 2024-11-21: High 9.5°C | Low 4.0°C
 =====================================
 ```
+## 📸 Screenshots
 
+### **App**
+[![](https://i.postimg.cc/xTk9fD1T/weather-app-cropped.jpg)](https://postimg.cc/4mTDP0cr)
 ## How It Works
 
 The application uses two Open-Meteo APIs:
